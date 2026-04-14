@@ -5,7 +5,7 @@ import torch
 
 RANDOM_SEED = 42
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-TEST_RATIO = 0.2
+TEST_RATIO = 0.1
 
 
 def set_random_seed(seed=RANDOM_SEED):
