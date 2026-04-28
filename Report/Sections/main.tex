@@ -4,9 +4,9 @@
 
 Retention time (RT) prediction is a core problem in LC-MS analysis because RT provides information that is complementary to MS/MS spectra. In the target paper, Kang et al.\ proposed \textbf{DeepGCN-RT}, a deep graph neural network for small-molecule RT prediction, and argued that previous RT-GNN models were still relatively shallow. Their main claim is that a \textbf{16-layer} graph convolutional architecture can be trained effectively once \textbf{residual connections}, \textbf{edge-aware message passing}, and an \textbf{attention/GRU readout} are introduced \cite{kang2023deepgcnrt}.
 
-The paper reports three main contributions. First, on the SMRT benchmark, DeepGCN-RT improves the previously reported state of the art and reaches a test MAE of \textbf{26.55 s} and a MAPE of \textbf{0.033} (3.3\%). Second, after transfer learning from SMRT, the model improves performance on seven external chromatographic datasets with different conditions. Third, the authors show that predicted RT can help molecular identification on the RIKEN-PlaSMA dataset by filtering candidate structures before final ranking.
+The paper reports three main contributions. First, on the SMRT benchmark, DeepGCN-RT improves the previously reported state of the art and reaches a test MAE of \textbf{26.55 s} and a MAPE of \textbf{0.033} (3.3\%). Second, after transfer learning from SMRT, the model improves performance on seven external chromatographic datasets with different conditions.
 
-Our project focuses on an \textbf{independent PyTorch Geometric reimplementation} of the paper's core model and training pipeline. We used the authors' official repository only to clarify underspecified choices such as the readout structure, output normalization, and the exact transfer-learning hyperparameters. The final code in this repository was written independently and integrated into a clean training pipeline centered on PyG datasets, PyG data loaders, and our own \path{Networks/DeepGCNRT.py}. The final experiments reported here focus on SMRT base-model training and direct SMRT-initialized transfer learning on each MiniDataset under a \textbf{single shuffled train/validation/test split}. We do not include our auxiliary RIKENMONA regression run in the main report because it does not match the paper's full RIKEN-PlaSMA identification protocol.
+Our project focuses on an \textbf{independent PyTorch Geometric reimplementation} of the paper's core model and training pipeline. We used the authors' official repository only to clarify underspecified choices such as the readout structure, output normalization, and the exact transfer-learning hyperparameters. The final code in this repository was written independently and integrated into a clean training pipeline centered on PyG datasets, PyG data loaders, and our own \path{Networks/DeepGCNRT.py}. The final experiments reported here focus on SMRT base-model training and direct SMRT-initialized transfer learning on each MiniDataset under a \textbf{single shuffled train/validation/test split}.
 
 \section{Model Architecture Reimplementation}
 
@@ -16,7 +16,7 @@ Each molecule is converted from a canonical SMILES string into a graph
 \(
 G = (V, E)
 \),
-where atoms are nodes and bonds are directed edges. The preprocessing and featurization code in this repository produces node features of dimension \textbf{164} and edge features of dimension \textbf{11}. This closely follows the feature design described in the paper and the earlier GCN work by Kensert et al., which the paper explicitly adopts \cite{kang2023deepgcnrt}.
+where atoms are nodes and bonds are directed edges. The preprocessing and featurization code in this repository produces node features of dimension \textbf{164} and edge features of dimension \textbf{11}. This closely follows the feature design described in the paper and the earlier GCN work by Kensert et al. \cite{kensert2021}, which the paper explicitly adopts \cite{kang2023deepgcnrt}.
 
 The node representation contains 20 groups of atom-level features, including element type, degree, formal charge, hybridization, aromaticity, hydrogen-bond donor/acceptor flags, ring membership, chirality-related features, and several RDKit-derived physicochemical contributions. Edge features contain 5 groups of bond-level attributes, including bond type, stereo information, conjugation, ring membership, and rotatability.
 
@@ -80,7 +80,7 @@ After \(L=16\) graph convolution layers, molecule-level embeddings are produced 
     \mathbf{g}^{(0)} = \sum_{v \in V} \mathbf{h}^{(L)}_v .
 \end{equation}
 
-At each readout step, a graph-attention module propagates information from nodes to the graph state, and a GRU cell updates the graph embedding:
+At each readout step, a graph-attention module propagates information from nodes to the graph state, and a GRU cell updates the graph embedding \cite{xiong2019}:
 
 \begin{equation}
     \mathbf{c}^{(k)} = \mathrm{GAT}\!\left(\{\mathbf{h}^{(L)}_v\}, \mathbf{g}^{(k-1)}\right),
@@ -117,10 +117,10 @@ with a ReLU between the two linear layers. The scalar output is the predicted RT
 Several details are not fully specified in the paper text, so we made the following explicit choices:
 
 \begin{enumerate}
-    \item \textbf{Independent framework choice.} The authors' code is written with DGL. We reimplemented the same layer structure in \textbf{PyTorch Geometric}, using \texttt{GATConv}, \texttt{global\_add\_pool}, and \texttt{GRUCell}. This changes the backend library and some internal operator details, even when the high-level computation graph is kept close to the paper.
+    \item \textbf{Independent framework choice.} The authors' code is written with DGL. We reimplemented the same layer structure in \textbf{PyTorch Geometric} \cite{fey2019}, using \texttt{GATConv}, \texttt{global\_add\_pool}, and \texttt{GRUCell}. This changes the backend library and some internal operator details, even when the high-level computation graph is kept close to the paper.
     \item \textbf{Output normalization.} The released DeepGCN-RT code uses \texttt{output\_norm="none"} for the edge-aware attentive model. We follow that setting.
     \item \textbf{Aggregation update function.} The released code exposes three options: \path{relu_eps_beta}, \path{relu}, and \path{no_relu}. We adopt \path{no_relu}, because it is the default path used by the published training scripts for DeepGCN-RT.
-    \item \textbf{Readout approximation.} The official DGL implementation directly uses \texttt{AttentiveFPReadout}. PyG does not provide a drop-in equivalent with the same implementation details, so we approximate the readout with graph attention plus \texttt{GRUCell} refinement. This is functionally close, but not guaranteed to be numerically identical.
+    \item \textbf{Readout approximation.} The official DGL implementation directly uses \texttt{AttentiveFPReadout} \cite{xiong2019}. PyG does not provide a drop-in equivalent with the same implementation details, so we approximate the readout with graph attention plus \texttt{GRUCell} refinement. This is functionally close, but not guaranteed to be numerically identical.
     \item \textbf{Readout initialization.} The paper states that the initial graph embedding is obtained by summing node embeddings before the GRU refinement. Our readout reproduces exactly that behavior.
     \item \textbf{Loss implementation.} The paper reports Huber loss. In PyTorch, \texttt{SmoothL1Loss} is the standard Huber-style implementation, so we use it as the training objective.
 \end{enumerate}
@@ -137,7 +137,7 @@ The codebase was reorganized around three layers:
 
 The implementation keeps the paper's layer widths and high-level structure unchanged: hidden dimension \(d=200\), 16 message-passing layers, two attentive readout steps, a 1024-unit dense hidden layer, dropout \(=0.1\), Adam optimizer, cosine warm restarts, and early stopping with patience 30.
 
-One practical difference from the original repository is that our code unifies pretraining and transfer learning under the same training interface. This makes the pipeline easier to read and reuse. In the current version, the active code path uses a \textbf{single shuffled train/validation/test split} for transfer learning rather than the paper's repeated cross-validation loop on the transfer datasets. We also did not reproduce the paper's full RIKEN-PlaSMA identification workflow, so that auxiliary experiment is omitted from the main comparison.
+One practical difference from the original repository is that our code unifies pretraining and transfer learning under the same training interface. This makes the pipeline easier to read and reuse. In the current version, the active code path uses a \textbf{single shuffled train/validation/test split} for transfer learning rather than the paper's repeated cross-validation loop on the transfer datasets.
 
 \section{Experimental Setup}
 
@@ -176,7 +176,7 @@ The preprocessing pipeline is identical across datasets:
     \item remove empty export columns such as \path{Unnamed:*};
     \item drop rows with missing RT or unparsable molecular structure;
     \item prefer SMILES, fall back to InChI when needed;
-    \item canonicalize molecules with RDKit;
+    \item canonicalize molecules with RDKit \cite{landrum2013};
     \item convert RT to seconds;
     \item transform molecules into PyG graphs and cache them to disk.
 \end{enumerate}
@@ -235,7 +235,7 @@ Reproduction reports are only useful when deviations are stated clearly. The mos
 
 \subsection{SMRT Benchmark}
 
-Our reproduced SMRT base model reaches a test MAE of \textbf{26.65 s}, a MedAE of \textbf{12.53 s}, a MAPE of \textbf{0.0332}, and an \(R^2\) of \textbf{0.90}. Numerically, this is very close to the paper's reported DeepGCN-RT result of 26.55 s MAE. The comparison should still be interpreted with care because our current SMRT loader reshuffles the merged official train and test files before creating the final 80/10/10 split, so the held-out set is not identical to the paper's fixed benchmark split.
+Our reproduced SMRT base model reaches a test MAE of \textbf{26.65 s}, a MedAE of \textbf{12.53 s}, a MAPE of \textbf{0.0332}, and an \(R^2\) of \textbf{0.90}. Numerically, this is very close to the paper's reported DeepGCN-RT result of 26.55 s MAE \cite{kang2023deepgcnrt}. The comparison should still be interpreted with care because our current SMRT loader reshuffles the merged official train and test files before creating the final 80/10/10 split, so the held-out set is not identical to the paper's fixed benchmark split.
 
 \begin{table}[t]
     \centering
@@ -280,7 +280,7 @@ Table~\ref{tab:transfer-seven} compares our single-split transfer-learning runs 
 
 \begin{table}[t]
     \centering
-    \caption{Transfer-learning MAE comparison on the seven datasets explicitly discussed in the paper. Official numbers are taken from Table 4 of the paper; our runs use a single shuffled train/validation/test split rather than repeated cross-validation.}
+    \caption{Transfer-learning MAE comparison on the seven datasets explicitly discussed in the paper. Official numbers are taken from Table 4 of the paper \cite{kang2023deepgcnrt}; our runs use a single shuffled train/validation/test split rather than repeated cross-validation.}
     \label{tab:transfer-seven}
     \begin{tabular}{lrrrr}
         \toprule
@@ -374,6 +374,15 @@ The main reproduction gap appears on the MiniDatasets. Under our single shuffled
 
 The main lesson from this project is that reproducing a paper requires reproducing both the model and the measurement procedure. For DeepGCN-RT, the architectural reimplementation is not the difficult part; the harder issue is aligning data splits, checkpoint selection, readout implementation details, and downstream evaluation with enough fidelity that the final numbers can be compared fairly.
 
+
+\section*{Use of Generative AI}
+
+Generative AI tools (including Claude and ChatGPT) were used during this project as a supporting tool for understanding, organization, and communication. Specifically, AI assistance was used to help explain parts of the original codebase to grab some details, to help us learn the new PyG library much more easily, and improve the grammar of our report.
+
+AI tools were not used as a substitute for running experiments or validating results. All code execution, experimental outputs, numerical results, interpretation of model performance, and final decisions were checked and approved by the project team. The reported results are based on our own implementation and experiments.
+
+We acknowledge that AI-generated suggestions may contain inaccuracies. Therefore, all AI-assisted content was reviewed against the original paper, the official repository, and maed sure that the new expression aligns with what we want to express in the final report.
+
 \begin{thebibliography}{9}
 
     \bibitem{kang2023deepgcnrt}
@@ -385,5 +394,25 @@ The main lesson from this project is that reproducing a paper requires reproduci
     Q. Kang et al.,
     \newblock ``DeepGCN-RT official source code and pretrained models,''
     \newblock GitHub repository: \url{https://github.com/kangqiyue/DeepGCN-RT}.
+
+    \bibitem{kensert2021}
+    A. Kensert, R. Bouwmeester, K. Efthymiadis, P. Van Broeck, G. Desmet, and D. Cabooter,
+    \newblock ``Graph convolutional networks for improved prediction and interpretability of chromatographic retention data,''
+    \newblock \emph{Analytical Chemistry}, vol. 93, pp. 15633--15641, 2021.
+
+    \bibitem{xiong2019}
+    Z. Xiong, D. Wang, X. Liu, F. Zhong, X. Wan, X. Li, Z. Li, X. Luo, K. Chen, H. Jiang, et al.,
+    \newblock ``Pushing the boundaries of molecular representation for drug discovery with the graph attention mechanism,''
+    \newblock \emph{Journal of Medicinal Chemistry}, vol. 63, pp. 8749--8760, 2019.
+
+    \bibitem{fey2019}
+    M. Fey and J. E. Lenssen,
+    \newblock ``Fast graph representation learning with PyTorch Geometric,''
+    \newblock \emph{arXiv preprint}, arXiv:1903.02428, 2019.
+
+    \bibitem{landrum2013}
+    G. Landrum,
+    \newblock ``RDKit: A software suite for cheminformatics, computational chemistry, and predictive modeling,'' 2013.
+    \newblock \url{https://www.rdkit.org}
 
 \end{thebibliography}
